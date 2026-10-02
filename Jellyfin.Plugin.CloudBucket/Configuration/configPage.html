@@ -1,0 +1,216 @@
+<div id="CloudBucketConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-checkbox,emby-select">
+    <div data-role="content">
+        <div class="content-primary">
+            <form id="CloudBucketConfigForm">
+                <div class="verticalSection">
+                    <h2 class="sectionTitle">S3-compatible bucket</h2>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="Endpoint">Endpoint</label>
+                        <input id="Endpoint" name="Endpoint" type="text" is="emby-input" placeholder="https://&lt;accountid&gt;.r2.cloudflarestorage.com" />
+                        <div class="fieldDescription">The S3 endpoint of your provider (Cloudflare R2, Backblaze B2, MinIO, ...).</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="BucketName">Bucket name</label>
+                        <input id="BucketName" name="BucketName" type="text" is="emby-input" />
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="AccessKeyId">Access key id</label>
+                        <input id="AccessKeyId" name="AccessKeyId" type="text" is="emby-input" />
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="SecretAccessKey">Secret access key</label>
+                        <input id="SecretAccessKey" name="SecretAccessKey" type="password" is="emby-input" />
+                        <div class="fieldDescription">Create a token with read-only (Object Read) permission.</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="Prefix">Key prefix (optional)</label>
+                        <input id="Prefix" name="Prefix" type="text" is="emby-input" placeholder="movies/" />
+                        <div class="fieldDescription">Only mirror objects under this prefix.</div>
+                    </div>
+                </div>
+
+                <div class="verticalSection">
+                    <h2 class="sectionTitle">Delivery &amp; library</h2>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="PublicBaseUrl">Public base URL</label>
+                        <input id="PublicBaseUrl" name="PublicBaseUrl" type="text" is="emby-input" placeholder="https://media.example.com" />
+                        <div class="fieldDescription">The bucket's public custom domain (or Worker URL). Used to build the .strm links.</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="StrmRootPath">.strm output path</label>
+                        <input id="StrmRootPath" name="StrmRootPath" type="text" is="emby-input" placeholder="/data/cloud-strm" />
+                        <div class="fieldDescription">Path inside the Jellyfin container. Make sure a volume is mounted there.</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="LibraryName">Library name</label>
+                        <input id="LibraryName" name="LibraryName" type="text" is="emby-input" />
+                    </div>
+
+                    <div class="selectContainer">
+                        <label class="selectLabel" for="LibraryType">Library type</label>
+                        <select is="emby-select" id="LibraryType" name="LibraryType" class="emby-select-withcolor emby-select">
+                            <option value="movies">Movies</option>
+                            <option value="tvshows">Shows</option>
+                            <option value="mixed">Mixed content</option>
+                            <option value="music">Music</option>
+                            <option value="musicvideos">Music videos</option>
+                            <option value="homevideos">Home videos</option>
+                            <option value="books">Books</option>
+                        </select>
+                    </div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="AutoCreateLibrary" name="AutoCreateLibrary" type="checkbox" is="emby-checkbox" />
+                            <span>Create/update the library automatically after a sync</span>
+                        </label>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="VideoExtensions">Video extensions</label>
+                        <input id="VideoExtensions" name="VideoExtensions" type="text" is="emby-input" />
+                        <div class="fieldDescription">Comma separated, e.g. .mp4,.mkv,.m4v</div>
+                    </div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="DeleteOrphans" name="DeleteOrphans" type="checkbox" is="emby-checkbox" />
+                            <span>Delete .strm files whose object no longer exists</span>
+                        </label>
+                    </div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="TriggerScanAfterSync" name="TriggerScanAfterSync" type="checkbox" is="emby-checkbox" />
+                            <span>Trigger a library scan after each sync</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="verticalSection">
+                    <h2 class="sectionTitle">Edge redirect</h2>
+                    <div class="fieldDescription">
+                        Optional. Set this token in your reverse proxy's forward_auth header (see the README)
+                        to serve media straight from the bucket instead of through the server.
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="SharedSecret">Shared secret</label>
+                        <input id="SharedSecret" name="SharedSecret" type="text" is="emby-input" />
+                    </div>
+                </div>
+
+                <div class="verticalSection">
+                    <button is="emby-button" type="submit" class="raised button-submit block emby-button">
+                        <span>Save</span>
+                    </button>
+                    <button is="emby-button" type="button" id="CloudBucketLibrary" class="raised block emby-button">
+                        <span>Create / update library</span>
+                    </button>
+                    <button is="emby-button" type="button" id="CloudBucketTest" class="raised button-cancel block emby-button">
+                        <span>Test connection</span>
+                    </button>
+                    <button is="emby-button" type="button" id="CloudBucketSync" class="raised block emby-button">
+                        <span>Sync now</span>
+                    </button>
+                    <div id="CloudBucketStatus" class="fieldDescription"></div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        (function () {
+            var pluginId = '7f3c9d2a-5b61-4e8f-a0c4-9d2b6e1f8a73';
+
+            function setStatus(text, isError) {
+                var el = document.querySelector('#CloudBucketStatus');
+                el.textContent = text || '';
+                el.style.color = isError ? '#e57373' : '#7cb342';
+            }
+
+            function loadConfig() {
+                Dashboard.showLoadingMsg();
+                ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                    document.querySelector('#Endpoint').value = config.Endpoint || '';
+                    document.querySelector('#BucketName').value = config.BucketName || '';
+                    document.querySelector('#AccessKeyId').value = config.AccessKeyId || '';
+                    document.querySelector('#SecretAccessKey').value = config.SecretAccessKey || '';
+                    document.querySelector('#Prefix').value = config.Prefix || '';
+                    document.querySelector('#PublicBaseUrl').value = config.PublicBaseUrl || '';
+                    document.querySelector('#StrmRootPath').value = config.StrmRootPath || '/data/cloud-strm';
+                    document.querySelector('#LibraryName').value = config.LibraryName || 'Cloud';
+                    document.querySelector('#LibraryType').value = config.LibraryType || 'movies';
+                    document.querySelector('#VideoExtensions').value = config.VideoExtensions || '.mp4,.mkv,.m4v,.mov,.avi,.webm,.ts,.mpg,.mpeg,.wmv,.flv';
+                    document.querySelector('#AutoCreateLibrary').checked = config.AutoCreateLibrary !== false;
+                    document.querySelector('#DeleteOrphans').checked = config.DeleteOrphans !== false;
+                    document.querySelector('#TriggerScanAfterSync').checked = config.TriggerScanAfterSync !== false;
+                    document.querySelector('#SharedSecret').value = config.SharedSecret || '';
+                    Dashboard.hideLoadingMsg();
+                });
+            }
+
+            function collectConfig() {
+                return {
+                    Endpoint: document.querySelector('#Endpoint').value,
+                    BucketName: document.querySelector('#BucketName').value,
+                    AccessKeyId: document.querySelector('#AccessKeyId').value,
+                    SecretAccessKey: document.querySelector('#SecretAccessKey').value,
+                    Prefix: document.querySelector('#Prefix').value,
+                    PublicBaseUrl: document.querySelector('#PublicBaseUrl').value,
+                    StrmRootPath: document.querySelector('#StrmRootPath').value,
+                    LibraryName: document.querySelector('#LibraryName').value,
+                    LibraryType: document.querySelector('#LibraryType').value,
+                    VideoExtensions: document.querySelector('#VideoExtensions').value,
+                    AutoCreateLibrary: document.querySelector('#AutoCreateLibrary').checked,
+                    DeleteOrphans: document.querySelector('#DeleteOrphans').checked,
+                    TriggerScanAfterSync: document.querySelector('#TriggerScanAfterSync').checked,
+                    SharedSecret: document.querySelector('#SharedSecret').value
+                };
+            }
+
+            document.querySelector('#CloudBucketConfigForm').addEventListener('submit', function () {
+                Dashboard.showLoadingMsg();
+                ApiClient.updatePluginConfiguration(pluginId, collectConfig()).then(function (result) {
+                    Dashboard.processPluginConfigurationUpdateResult(result);
+                    setStatus('Configuration saved.', false);
+                });
+                return false;
+            });
+
+            document.querySelector('#CloudBucketLibrary').addEventListener('click', function () {
+                setStatus('Creating library...', false);
+                ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('CloudBucket/CreateLibrary') })
+                    .then(function (r) { setStatus(r.message, !r.ok); })
+                    .catch(function () { setStatus('Failed. Check the server log.', true); });
+            });
+
+            document.querySelector('#CloudBucketTest').addEventListener('click', function () {
+                setStatus('Testing...', false);
+                ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('CloudBucket/TestConnection') })
+                    .then(function (r) { setStatus(r.message, !r.ok); })
+                    .catch(function () { setStatus('Test failed. Check the server log.', true); });
+            });
+
+            document.querySelector('#CloudBucketSync').addEventListener('click', function () {
+                setStatus('Syncing...', false);
+                ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('CloudBucket/Sync') })
+                    .then(function (r) {
+                        var msg = 'Sync done. Listed ' + r.listed + ', wrote ' + r.written + ', removed ' + r.deleted + '.';
+                        if (r.library) { msg += ' ' + r.library; }
+                        setStatus(msg, false);
+                    })
+                    .catch(function () { setStatus('Sync failed. Check the server log.', true); });
+            });
+
+            document.querySelector('#CloudBucketConfigPage').addEventListener('pageshow', loadConfig);
+        })();
+    </script>
+</div>

@@ -1,0 +1,20 @@
+[
+  {
+    "guid": "7f3c9d2a-5b61-4e8f-a0c4-9d2b6e1f8a73",
+    "name": "Cloud Bucket",
+    "description": "Mirrors an S3-compatible bucket (Cloudflare R2, Backblaze B2, ...) into a separate Jellyfin library using .strm files and can redirect playback straight to the bucket.",
+    "overview": "Serve media from a Cloudflare R2 / S3 bucket as a separate Jellyfin library.",
+    "owner": "huzaim",
+    "category": "General",
+    "versions": [
+      {
+        "version": "1.0.0.0",
+        "changelog": "Initial release: bucket sync to .strm, separate library, resolve endpoint for edge redirect.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://example.com/Jellyfin.Plugin.CloudBucket_1.0.0.0.zip",
+        "checksum": "1b35a79c570b97528830116c25e18286",
+        "timestamp": "2026-10-02T00:00:00Z"
+      }
+    ]
+  }
+]

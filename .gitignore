@@ -1,0 +1,15 @@
+# Build output
+bin/
+obj/
+build/
+*.user
+
+# Packaged plugin
+*.zip
+
+# Local secrets (not used by the plugin, but never commit them)
+.env
+
+# OS noise
+.DS_Store
+Thumbs.db

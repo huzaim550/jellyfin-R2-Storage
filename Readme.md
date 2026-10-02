@@ -1,1 +1,231 @@
-This is a Plugin Which Helps You integrate Cloud BUcket in jellyfin
+# Jellyfin Cloud Bucket
+
+Serve media that already lives in a **Cloudflare R2** (or any S3-compatible) bucket as a
+**separate Jellyfin library**, and optionally make remote clients fetch the media **straight from
+Cloudflare's edge** instead of through your home upload.
+
+Nothing is uploaded. Your local media is never touched. The plugin only *reads* the bucket and
+writes tiny `.strm` files.
+
+Everything is configured from **Dashboard → Plugins → Cloud Bucket** — no editing files on the
+server, just like other Jellyfin plugins.
+
+---
+
+## Read this first (the honest bit)
+
+Jellyfin **relays** remote/`.strm` streams through the server by default. That is confirmed in
+Jellyfin 12's own code (`Jellyfin.Api/Controllers/VideosController.cs` →
+`GetStaticRemoteStreamResult` → `httpClient.SendAsync`). So:
+
+- **Plugin only** → you get a clean separate "Cloud" library, but playback still goes
+  `client → Jellyfin → bucket → Jellyfin → client`.
+- **Plugin + redirect proxy** → the proxy answers the media request with a `302` to the bucket,
+  so the client downloads directly from the edge. This is where the speed-up comes from.
+
+The plugin exposes everything the redirect proxy needs, so the proxy part is a small change to
+whatever reverse proxy (Caddy, nginx, Traefik, ...) you already run. You do **not** need to expose
+any router ports — it works over Tailscale/ZeroTier or Cloudflare Tunnel.
+
+```
+Phase 1
+  local media -> Jellyfin "Movies"           (untouched)
+  bucket      -> plugin -> .strm files       -> Jellyfin "Cloud" library
+
+Phase 2
+  client -> Tailscale -> Caddy
+              |-- login/UI/API -> Jellyfin
+              '-- media stream -> 302 -> media.example.com (edge) -> client
+```
+
+---
+
+## Requirements
+
+- Jellyfin **12.x** (this plugin targets `net10.0` / `targetAbi 12.0.0.0`).
+- An S3-compatible bucket with a **public URL** (for R2: attach a custom domain to the bucket).
+- A read-only access key for that bucket.
+
+---
+
+## Install
+
+### From a repository (once hosted)
+
+Add your manifest URL under **Dashboard → Plugins → Repositories**, then install **Cloud Bucket**
+from the catalog.
+
+The included `.github/workflows/build.yml` builds the plugin and attaches a zip to every `v*` tag.
+Host `manifest.json` (update `sourceUrl` + `checksum` to point at that zip) anywhere reachable and
+use its URL as the repository.
+
+### Manually
+
+```bash
+export DOTNET_ROOT="$HOME/.dotnet" PATH="$HOME/.dotnet:$PATH"
+dotnet publish Jellyfin.Plugin.CloudBucket/Jellyfin.Plugin.CloudBucket.csproj -c Release -o build/publish
+```
+
+Copy the output into the Jellyfin plugins folder and restart:
+
+```bash
+mkdir -p /path/to/jellyfin/config/plugins/Jellyfin.Plugin.CloudBucket
+cp build/publish/*.dll build/publish/*.json /path/to/jellyfin/config/plugins/Jellyfin.Plugin.CloudBucket/
+```
+
+---
+
+## Configure
+
+Open **Dashboard → Plugins → Cloud Bucket** and fill in:
+
+| Field | Meaning |
+| --- | --- |
+| Endpoint | `https://<accountid>.r2.cloudflarestorage.com` |
+| Bucket name | your bucket |
+| Access key id / secret | read-only (Object Read) credentials |
+| Key prefix | *optional* — only mirror part of the bucket |
+| Public base URL | the bucket's public custom domain, e.g. `https://media.example.com` |
+| .strm output path | inside the container, e.g. `/data/cloud-strm` (must be a mounted volume) |
+| Library name / type | name and content type of the new Jellyfin library |
+| Auto create library | create/update the library automatically after each sync |
+| Video extensions | which object extensions to mirror |
+| Delete orphans | remove `.strm` files whose object is gone |
+| Trigger scan | queue a library scan after sync |
+| Shared secret | generated automatically; used by the edge redirect |
+
+### Docker volume
+
+The plugin writes `.strm` files inside the container, so mount a volume there:
+
+```yaml
+services:
+  jellyfin:
+    volumes:
+      - ./config:/config
+      - /path/to/media:/media:ro
+      - ./cloud-strm:/data/cloud-strm
+```
+
+### Run it
+
+Click **Test connection**, then **Sync now**. With *Auto create library* on, the library appears
+and starts scanning. (A "Sync Cloud Bucket library" task also runs every 12 hours.)
+
+> `.strm` links only resolve if your object keys look like real titles, e.g.
+> `movies/Dune Part Two (2024)/Dune Part Two (2024).mkv`.
+
+---
+
+## Edge redirect (makes official apps fast)
+
+Official Jellyfin apps follow HTTP redirects, so this works with them. The plugin exposes:
+
+```
+GET /CloudBucket/Resolve/{itemId}
+```
+
+It returns `200` + an `X-R2-Url` header when the item maps to a bucket object, otherwise `200`
+without the header, so the proxy can fall through to Jellyfin. It requires the shared secret from
+the plugin page in an `X-CloudBucket-Secret` header.
+
+### Caddy
+
+```caddyfile
+jellyfin.example.com {
+    # Only direct-play static requests are redirected; transcodes fall through.
+    @media  path_regexp media ^/(?:Videos|Audio)/([0-9a-fA-F-]+)/stream
+    @static query static=true
+
+    handle @media @static {
+        route {
+            forward_auth 127.0.0.1:8096 {
+                uri /CloudBucket/Resolve/{re.media.1}
+                header_up X-CloudBucket-Secret "PASTE_THE_SHARED_SECRET_HERE"
+                copy_headers X-R2-Url
+            }
+            @hasr2 header X-R2-Url *
+            redir @hasr2 {http.request.header.X-R2-Url} 302
+            reverse_proxy 127.0.0.1:8096
+        }
+    }
+
+    reverse_proxy 127.0.0.1:8096
+}
+```
+
+### nginx (sketch)
+
+```nginx
+location ~ ^/(?:Videos|Audio)/([0-9a-fA-F-]+)/stream$ {
+    # Use auth_request to /CloudBucket/Resolve/$1 with the secret header,
+    # capture the X-R2-Url response header, and return 302 when present.
+    # Otherwise proxy_pass to Jellyfin.
+    proxy_pass http://127.0.0.1:8096;
+}
+```
+
+Verify by playing something remote and watching the bucket's metrics — traffic should come from
+the edge, and Jellyfin's upload should stay near idle. Transcodes still route through the server.
+
+---
+
+## Endpoints
+
+| Method | Route | Auth | Purpose |
+| --- | --- | --- | --- |
+| `GET` | `/CloudBucket/Config` | admin | read configuration |
+| `POST` | `/CloudBucket/Config` | admin | save configuration |
+| `POST` | `/CloudBucket/TestConnection` | admin | verify bucket/credentials |
+| `POST` | `/CloudBucket/Sync` | admin | sync now |
+| `POST` | `/CloudBucket/CreateLibrary` | admin | create/update the library |
+| `GET` | `/CloudBucket/Resolve/{itemId}` | shared secret | item → object URL (proxy only) |
+
+---
+
+## How sync works
+
+1. Paginated `ListObjectsV2` on the bucket (optionally under the prefix).
+2. Video objects are mirrored to `<output>/<same relative path>.strm`, each containing the public
+   URL `PublicBaseUrl/<url-encoded key>`.
+3. Orphaned `.strm` files are removed when enabled.
+4. The library is created/updated and a scan is queued when enabled.
+
+Files are only rewritten when their URL actually changes.
+
+---
+
+## Troubleshooting
+
+- **Plugin not listed / "NotSupported"** — Jellyfin must be 12.x; this plugin is built against
+  `Jellyfin.Controller` 12.1.0.
+- **Test connection fails** — check the endpoint format and that the token has Object Read.
+- **Playback still uses my upload** — the redirect proxy isn't active, or the client requested a
+  transcode/HLS instead of a static direct play (`?static=true`).
+- **No metadata** — object keys must be title-like.
+- **Browser playback fails cross-origin** — add CORS headers to the bucket for the Jellyfin origin.
+- **Security** — a public bucket URL means anyone with a link can watch. Use obscure prefixes, or
+  move to signed URLs / a Worker.
+
+---
+
+## Project layout
+
+```
+Jellyfin.Plugin.CloudBucket/
+  Plugin.cs                        # BasePlugin + auto shared secret
+  PluginServiceRegistrator.cs      # DI
+  CloudBucketSettings.cs
+  Configuration/PluginConfiguration.cs
+  Configuration/configPage.html    # dashboard UI
+  Services/StrmSyncService.cs      # S3 listing -> .strm
+  Services/CloudLibraryService.cs  # creates/updates the Jellyfin library
+  Tasks/SyncCloudLibraryTask.cs    # scheduled task
+  Controllers/CloudBucketController.cs
+.github/workflows/build.yml
+manifest.json                      # plugin repository
+```
+
+## License
+
+GPL-3.0-only. See `LICENSE`.
