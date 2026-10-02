@@ -163,25 +163,38 @@ the plugin page in an `X-CloudBucket-Secret` header.
 
 ```caddyfile
 jellyfin.example.com {
-    # Only direct-play static requests are redirected; transcodes fall through.
-    @media  path_regexp media ^/(?:Videos|Audio)/([0-9a-fA-F-]+)/stream
-    @static query static=true
+    # Direct-play static requests only. Conditions in a named matcher are ANDed.
+    @media_static {
+        path_regexp media ^/(?:Videos|Audio)/([0-9a-fA-F-]+)/stream
+        query static=true
+    }
+    @hasr2 header X-R2-Url *
 
-    handle @media @static {
+    handle @media_static {
         route {
             forward_auth 127.0.0.1:8096 {
                 uri /CloudBucket/Resolve/{re.media.1}
                 header_up X-CloudBucket-Secret "PASTE_THE_SHARED_SECRET_HERE"
                 copy_headers X-R2-Url
             }
-            @hasr2 header X-R2-Url *
             redir @hasr2 {http.request.header.X-R2-Url} 302
             reverse_proxy 127.0.0.1:8096
         }
     }
 
+    # Everything else (login, browse, transcodes, websockets) goes to Jellyfin.
     reverse_proxy 127.0.0.1:8096
 }
+```
+
+> Inside Docker, replace `127.0.0.1:8096` with the Jellyfin service name (e.g. `jellyfin:8096`)
+> and make sure both containers share a Docker network.
+
+To validate without restarting:
+
+```bash
+docker run --rm -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine \
+  caddy validate --config /etc/caddy/Caddyfile
 ```
 
 ### nginx (sketch)
