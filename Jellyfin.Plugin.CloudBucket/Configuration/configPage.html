@@ -40,7 +40,7 @@
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="PublicBaseUrl">Public base URL</label>
                         <input id="PublicBaseUrl" name="PublicBaseUrl" type="text" is="emby-input" placeholder="https://media.example.com" />
-                        <div class="fieldDescription">The bucket's public custom domain (or Worker URL). Used to build the .strm links.</div>
+                        <div class="fieldDescription">The bucket's public custom domain (or R2.dev URL). Used to build the .strm links. Example: https://media.example.com</div>
                     </div>
 
                     <div class="inputContainer">
@@ -203,6 +203,10 @@
                 setStatus('Syncing...', false);
                 ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('CloudBucket/Sync') })
                     .then(function (r) {
+                        if (r.ok === false) {
+                            setStatus(r.message || 'Sync failed.', true);
+                            return;
+                        }
                         var msg = 'Sync done. Listed ' + r.listed + ', wrote ' + r.written + ', removed ' + r.deleted + '.';
                         if (r.library) { msg += ' ' + r.library; }
                         setStatus(msg, false);

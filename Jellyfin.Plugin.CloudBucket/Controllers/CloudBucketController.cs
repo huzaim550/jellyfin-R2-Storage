@@ -102,27 +102,36 @@ public sealed class CloudBucketController : ControllerBase
         }
 
         var settings = CloudBucketSettings.From(plugin.Configuration);
-        var result = await _syncService.SyncAsync(settings, null, cancellationToken).ConfigureAwait(false);
 
-        string? libraryMessage = null;
-        if (settings.AutoCreateLibrary)
+        try
         {
-            libraryMessage = await _libraryService.EnsureLibraryAsync(settings).ConfigureAwait(false);
+            var result = await _syncService.SyncAsync(settings, null, cancellationToken).ConfigureAwait(false);
+
+            string? libraryMessage = null;
+            if (settings.AutoCreateLibrary)
+            {
+                libraryMessage = await _libraryService.EnsureLibraryAsync(settings).ConfigureAwait(false);
+            }
+
+            if (settings.TriggerScanAfterSync)
+            {
+                _libraryManager.QueueLibraryScan();
+            }
+
+            return Ok(new
+            {
+                ok = true,
+                result.Listed,
+                result.Written,
+                result.Unchanged,
+                result.Deleted,
+                Library = libraryMessage
+            });
         }
-
-        if (settings.TriggerScanAfterSync)
+        catch (Exception ex)
         {
-            _libraryManager.QueueLibraryScan();
+            return Ok(new { ok = false, message = ex.Message });
         }
-
-        return Ok(new
-        {
-            result.Listed,
-            result.Written,
-            result.Unchanged,
-            result.Deleted,
-            Library = libraryMessage
-        });
     }
 
     /// <summary>
