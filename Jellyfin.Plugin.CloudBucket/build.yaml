@@ -1,7 +1,7 @@
 ---
 name: "Cloud Bucket"
 guid: "7f3c9d2a-5b61-4e8f-a0c4-9d2b6e1f8a73"
-version: "1.0.0.0"
+version: "1.0.1.0"
 targetAbi: "12.0.0.0"
 framework: "net10.0"
 overview: "Serve media from a Cloudflare R2 / S3 bucket as a separate Jellyfin library."

@@ -14,6 +14,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -22,31 +24,49 @@ jobs:
       - name: Publish plugin
         run: dotnet publish Jellyfin.Plugin.CloudBucket/Jellyfin.Plugin.CloudBucket.csproj -c Release -o publish
 
-      - name: Package + build repository manifest
+      - name: Package
+        id: package
         run: |
           set -euo pipefail
           VERSION="$(grep -oP '(?<=<Version>)[^<]+' Jellyfin.Plugin.CloudBucket/Jellyfin.Plugin.CloudBucket.csproj | head -1)"
           ZIP_NAME="Jellyfin.Plugin.CloudBucket_${VERSION}.zip"
           mkdir -p dist
-          (cd publish && zip -q "../dist/${ZIP_NAME}" \
+          # Deterministic zip: fixed timestamps + stripped extra fields, so an
+          # unchanged build keeps the same checksum and the manifest stays stable.
+          (cd publish && find . -type f -exec touch -t 200001010000 {} + && zip -q -X "../dist/${ZIP_NAME}" \
             Jellyfin.Plugin.CloudBucket.dll \
             Jellyfin.Plugin.CloudBucket.deps.json \
             AWSSDK.S3.dll \
             AWSSDK.Core.dll)
           CHECKSUM="$(md5sum "dist/${ZIP_NAME}" | cut -d' ' -f1)"
-          BASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/latest/download"
-          scripts/generate-manifest.sh "${BASE_URL}" "${ZIP_NAME}" "${CHECKSUM}" "${VERSION}" > dist/manifest.json
-          echo "Repository URL: ${BASE_URL}/manifest.json"
-          echo "Plugin zip:     ${BASE_URL}/${ZIP_NAME}"
-          cat dist/manifest.json
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "zip_name=${ZIP_NAME}" >> "$GITHUB_OUTPUT"
+          echo "checksum=${CHECKSUM}" >> "$GITHUB_OUTPUT"
 
-      - name: Publish release (zip + manifest)
+      - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: latest
-          name: Latest build
+          tag_name: v${{ steps.package.outputs.version }}
+          name: v${{ steps.package.outputs.version }}
           make_latest: true
-          files: |
-            dist/*.zip
-            dist/manifest.json
+          files: dist/*.zip
           fail_on_unmatched_files: true
+
+      - name: Update repository manifest
+        run: |
+          set -euo pipefail
+          VERSION='${{ steps.package.outputs.version }}'
+          ZIP_NAME='${{ steps.package.outputs.zip_name }}'
+          CHECKSUM='${{ steps.package.outputs.checksum }}'
+          BASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}"
+          scripts/generate-manifest.sh "${BASE_URL}" "${ZIP_NAME}" "${CHECKSUM}" "${VERSION}" > manifest.json
+          cat manifest.json
+          if git diff --quiet -- manifest.json; then
+            echo "manifest unchanged, nothing to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add manifest.json
+          git commit -m "chore: update plugin manifest for v${VERSION} [skip ci]"
+          git push
