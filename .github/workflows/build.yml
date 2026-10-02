@@ -1,11 +1,19 @@
-name: build
+name: build-and-publish
 
 on:
   push:
     branches: [ main ]
     tags: [ 'v*' ]
-  pull_request:
   workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -17,30 +25,45 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - name: Build
-        run: dotnet build Jellyfin.Plugin.CloudBucket/Jellyfin.Plugin.CloudBucket.csproj -c Release
-
-      - name: Publish
+      - name: Publish plugin
         run: dotnet publish Jellyfin.Plugin.CloudBucket/Jellyfin.Plugin.CloudBucket.csproj -c Release -o publish
 
-      - name: Package plugin
-        id: package
+      - name: Package + build repository manifest
         run: |
-          VERSION=$(grep -oP '(?<=<Version>)[^<]+' Jellyfin.Plugin.CloudBucket/Jellyfin.Plugin.CloudBucket.csproj)
-          ZIP="Jellyfin.Plugin.CloudBucket_${VERSION}.zip"
-          (cd publish && zip -q "../${ZIP}" Jellyfin.Plugin.CloudBucket.dll Jellyfin.Plugin.CloudBucket.deps.json AWSSDK.S3.dll AWSSDK.Core.dll)
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "zip=${ZIP}" >> "$GITHUB_OUTPUT"
-          echo "checksum=$(md5sum "${ZIP}" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          VERSION="$(grep -oP '(?<=<Version>)[^<]+' Jellyfin.Plugin.CloudBucket/Jellyfin.Plugin.CloudBucket.csproj | head -1)"
+          ZIP_NAME="Jellyfin.Plugin.CloudBucket_${VERSION}.zip"
+          mkdir -p site
+          (cd publish && zip -q "../site/${ZIP_NAME}" \
+            Jellyfin.Plugin.CloudBucket.dll \
+            Jellyfin.Plugin.CloudBucket.deps.json \
+            AWSSDK.S3.dll \
+            AWSSDK.Core.dll)
+          CHECKSUM="$(md5sum "site/${ZIP_NAME}" | cut -d' ' -f1)"
+          REPO="${GITHUB_REPOSITORY#*/}"
+          BASE_URL="https://${GITHUB_REPOSITORY_OWNER}.github.io/${REPO}"
+          scripts/generate-manifest.sh "${BASE_URL}" "${ZIP_NAME}" "${CHECKSUM}" "${VERSION}" > site/manifest.json
+          echo "Published ${ZIP_NAME}"
+          echo "Repository URL: ${BASE_URL}/manifest.json"
+          cat site/manifest.json
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
         with:
-          name: plugin-zip
-          path: ${{ steps.package.outputs.zip }}
+          enablement: true
 
-      - name: Attach to release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          files: ${{ steps.package.outputs.zip }}
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
