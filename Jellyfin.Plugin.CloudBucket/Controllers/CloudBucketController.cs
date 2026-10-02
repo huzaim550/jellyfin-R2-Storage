@@ -8,6 +8,7 @@ using Jellyfin.Plugin.CloudBucket.Services;
 using MediaBrowser.Controller.Library;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.CloudBucket.Controllers;
 
@@ -21,6 +22,7 @@ public sealed class CloudBucketController : ControllerBase
     private readonly StrmSyncService _syncService;
     private readonly CloudLibraryService _libraryService;
     private readonly ILibraryManager _libraryManager;
+    private readonly ILogger<CloudBucketController> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="CloudBucketController"/> class.
@@ -28,11 +30,13 @@ public sealed class CloudBucketController : ControllerBase
     public CloudBucketController(
         StrmSyncService syncService,
         CloudLibraryService libraryService,
-        ILibraryManager libraryManager)
+        ILibraryManager libraryManager,
+        ILogger<CloudBucketController> logger)
     {
         _syncService = syncService;
         _libraryService = libraryService;
         _libraryManager = libraryManager;
+        _logger = logger;
     }
 
     /// <summary>
@@ -59,6 +63,7 @@ public sealed class CloudBucketController : ControllerBase
         }
 
         plugin.UpdateConfiguration(config);
+        _logger.LogInformation("Cloud Bucket configuration saved.");
         return NoContent();
     }
 
@@ -76,15 +81,18 @@ public sealed class CloudBucketController : ControllerBase
         }
 
         var settings = CloudBucketSettings.From(plugin.Configuration);
+        _logger.LogInformation("Cloud Bucket test-connection requested.");
 
         try
         {
             var count = await _syncService.TestConnectionAsync(settings, cancellationToken).ConfigureAwait(false);
+            _logger.LogInformation("Cloud Bucket test-connection succeeded (sample objects returned: {Count}).", count);
             return Ok(new { ok = true, message = $"Connected. Sample objects returned: {count}" });
         }
         catch (Exception ex)
         {
-            return Ok(new { ok = false, message = ex.Message });
+            _logger.LogError(ex, "Cloud Bucket test-connection failed.");
+            return Ok(new { ok = false, message = $"Connection failed: {ex.Message}" });
         }
     }
 
@@ -102,6 +110,11 @@ public sealed class CloudBucketController : ControllerBase
         }
 
         var settings = CloudBucketSettings.From(plugin.Configuration);
+        _logger.LogInformation(
+            "Cloud Bucket sync requested (bucket={Bucket}, prefix={Prefix}, output={Output}).",
+            settings.BucketName,
+            string.IsNullOrEmpty(settings.Prefix) ? "(none)" : settings.Prefix,
+            settings.StrmRootPath);
 
         try
         {
@@ -118,6 +131,14 @@ public sealed class CloudBucketController : ControllerBase
                 _libraryManager.QueueLibraryScan();
             }
 
+            _logger.LogInformation(
+                "Cloud Bucket sync succeeded: listed {Listed}, wrote {Written}, unchanged {Unchanged}, removed {Deleted}. {Library}",
+                result.Listed,
+                result.Written,
+                result.Unchanged,
+                result.Deleted,
+                libraryMessage);
+
             return Ok(new
             {
                 ok = true,
@@ -130,7 +151,8 @@ public sealed class CloudBucketController : ControllerBase
         }
         catch (Exception ex)
         {
-            return Ok(new { ok = false, message = ex.Message });
+            _logger.LogError(ex, "Cloud Bucket sync failed.");
+            return Ok(new { ok = false, message = $"Sync failed: {ex.Message}" });
         }
     }
 
@@ -148,15 +170,18 @@ public sealed class CloudBucketController : ControllerBase
         }
 
         var settings = CloudBucketSettings.From(plugin.Configuration);
+        _logger.LogInformation("Cloud Bucket create/update library requested (name={Name}, path={Path}).", settings.LibraryName, settings.StrmRootPath);
 
         try
         {
             var message = await _libraryService.EnsureLibraryAsync(settings).ConfigureAwait(false);
+            _logger.LogInformation("Cloud Bucket library: {Message}", message);
             return Ok(new { ok = true, message });
         }
         catch (Exception ex)
         {
-            return Ok(new { ok = false, message = ex.Message });
+            _logger.LogError(ex, "Cloud Bucket failed to create/update the library.");
+            return Ok(new { ok = false, message = $"Library failed: {ex.Message}" });
         }
     }
 
@@ -184,6 +209,7 @@ public sealed class CloudBucketController : ControllerBase
         var provided = Request.Headers["X-CloudBucket-Secret"].ToString();
         if (!FixedTimeEquals(provided, settings.SharedSecret))
         {
+            _logger.LogWarning("Cloud Bucket resolve rejected for item {ItemId}: bad shared secret.", itemId);
             return Unauthorized();
         }
 
@@ -194,7 +220,12 @@ public sealed class CloudBucketController : ControllerBase
         var url = item is null ? null : GetObjectUrl(item.Path);
         if (!string.IsNullOrWhiteSpace(url))
         {
+            _logger.LogDebug("Cloud Bucket resolve: item {ItemId} -> {Url}", itemId, url);
             Response.Headers["X-R2-Url"] = url;
+        }
+        else
+        {
+            _logger.LogDebug("Cloud Bucket resolve: item {ItemId} has no bucket URL, falling through.", itemId);
         }
 
         return Ok();

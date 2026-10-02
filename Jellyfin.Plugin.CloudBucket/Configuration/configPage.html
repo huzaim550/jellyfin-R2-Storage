@@ -136,6 +136,46 @@
                 el.style.color = isError ? '#e57373' : '#7cb342';
             }
 
+            // Self-contained toast so it works regardless of the web client version.
+            function showToast(text, isError) {
+                var el = document.createElement('div');
+                el.textContent = text;
+                el.style.cssText = [
+                    'position:fixed',
+                    'top:72px',
+                    'left:50%',
+                    'transform:translateX(-50%)',
+                    'max-width:70%',
+                    'padding:12px 18px',
+                    'border-radius:8px',
+                    'color:#fff',
+                    'font-size:15px',
+                    'line-height:1.35',
+                    'z-index:99999',
+                    'box-shadow:0 6px 20px rgba(0,0,0,0.45)',
+                    'background:' + (isError ? '#b3261e' : '#2e7d32'),
+                    'opacity:0',
+                    'transition:opacity .25s ease'
+                ].join(';');
+                document.body.appendChild(el);
+
+                requestAnimationFrame(function () { el.style.opacity = '1'; });
+                setTimeout(function () {
+                    el.style.opacity = '0';
+                    setTimeout(function () { el.remove(); }, 300);
+                }, isError ? 8000 : 4500);
+            }
+
+            function notify(text, isError) {
+                setStatus(text, isError);
+                showToast(text, isError);
+                if (isError) {
+                    console.error('[Cloud Bucket] ' + text);
+                } else {
+                    console.info('[Cloud Bucket] ' + text);
+                }
+            }
+
             function loadConfig() {
                 Dashboard.showLoadingMsg();
                 ApiClient.getPluginConfiguration(pluginId).then(function (config) {
@@ -180,7 +220,9 @@
                 Dashboard.showLoadingMsg();
                 ApiClient.updatePluginConfiguration(pluginId, collectConfig()).then(function (result) {
                     Dashboard.processPluginConfigurationUpdateResult(result);
-                    setStatus('Configuration saved.', false);
+                    notify('Configuration saved.', false);
+                }).catch(function () {
+                    notify('Could not save the configuration. Check the server log.', true);
                 });
                 return false;
             });
@@ -188,15 +230,15 @@
             document.querySelector('#CloudBucketLibrary').addEventListener('click', function () {
                 setStatus('Creating library...', false);
                 ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('CloudBucket/CreateLibrary') })
-                    .then(function (r) { setStatus(r.message, !r.ok); })
-                    .catch(function () { setStatus('Failed. Check the server log.', true); });
+                    .then(function (r) { notify(r.message || (r.ok ? 'Done.' : 'Failed.'), r.ok === false); })
+                    .catch(function () { notify('Failed to create the library. Check the server log.', true); });
             });
 
             document.querySelector('#CloudBucketTest').addEventListener('click', function () {
-                setStatus('Testing...', false);
+                setStatus('Testing connection...', false);
                 ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('CloudBucket/TestConnection') })
-                    .then(function (r) { setStatus(r.message, !r.ok); })
-                    .catch(function () { setStatus('Test failed. Check the server log.', true); });
+                    .then(function (r) { notify(r.message || (r.ok ? 'Connection OK.' : 'Connection failed.'), r.ok === false); })
+                    .catch(function () { notify('Test failed. Check the server log.', true); });
             });
 
             document.querySelector('#CloudBucketSync').addEventListener('click', function () {
@@ -204,14 +246,14 @@
                 ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('CloudBucket/Sync') })
                     .then(function (r) {
                         if (r.ok === false) {
-                            setStatus(r.message || 'Sync failed.', true);
+                            notify(r.message || 'Sync failed.', true);
                             return;
                         }
                         var msg = 'Sync done. Listed ' + r.listed + ', wrote ' + r.written + ', removed ' + r.deleted + '.';
                         if (r.library) { msg += ' ' + r.library; }
-                        setStatus(msg, false);
+                        notify(msg, false);
                     })
-                    .catch(function () { setStatus('Sync failed. Check the server log.', true); });
+                    .catch(function () { notify('Sync failed. Check the server log.', true); });
             });
 
             document.querySelector('#CloudBucketConfigPage').addEventListener('pageshow', loadConfig);

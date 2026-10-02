@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Configuration;
 using MediaBrowser.Model.Entities;
+using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.CloudBucket.Services;
 
@@ -14,13 +15,15 @@ namespace Jellyfin.Plugin.CloudBucket.Services;
 public sealed class CloudLibraryService
 {
     private readonly ILibraryManager _libraryManager;
+    private readonly ILogger<CloudLibraryService> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="CloudLibraryService"/> class.
     /// </summary>
-    public CloudLibraryService(ILibraryManager libraryManager)
+    public CloudLibraryService(ILibraryManager libraryManager, ILogger<CloudLibraryService> logger)
     {
         _libraryManager = libraryManager;
+        _logger = logger;
     }
 
     /// <summary>
@@ -53,6 +56,12 @@ public sealed class CloudLibraryService
                 .AddVirtualFolder(name, ParseCollectionType(settings.LibraryType), options, true)
                 .ConfigureAwait(false);
 
+            _logger.LogInformation(
+                "Cloud Bucket created library {Name} ({Type}) at {Path}.",
+                name,
+                settings.LibraryType,
+                settings.StrmRootPath);
+
             return $"Created library '{name}' ({settings.LibraryType}).";
         }
 
@@ -61,6 +70,10 @@ public sealed class CloudLibraryService
         {
             _libraryManager.AddMediaPath(name, new MediaPathInfo(settings.StrmRootPath));
             _libraryManager.QueueLibraryScan();
+            _logger.LogInformation(
+                "Cloud Bucket added media path {Path} to existing library {Name}.",
+                settings.StrmRootPath,
+                name);
             return $"Added '{settings.StrmRootPath}' to existing library '{name}'.";
         }
 
