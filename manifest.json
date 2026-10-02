@@ -11,7 +11,7 @@
         "version": "1.0.0.0",
         "changelog": "Initial release: bucket sync to .strm, separate library, resolve endpoint for edge redirect.",
         "targetAbi": "12.0.0.0",
-        "sourceUrl": "https://huzaim550.github.io/jellyfin-R2-Storage/Jellyfin.Plugin.CloudBucket_1.0.0.0.zip",
+        "sourceUrl": "https://github.com/huzaim550/jellyfin-R2-Storage/releases/latest/download/Jellyfin.Plugin.CloudBucket_1.0.0.0.zip",
         "checksum": "1b35a79c570b97528830116c25e18286",
         "timestamp": "2026-10-02T00:00:00Z"
       }

@@ -7,13 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: pages
-  cancel-in-progress: true
+  contents: write
 
 jobs:
   build:
@@ -33,37 +27,26 @@ jobs:
           set -euo pipefail
           VERSION="$(grep -oP '(?<=<Version>)[^<]+' Jellyfin.Plugin.CloudBucket/Jellyfin.Plugin.CloudBucket.csproj | head -1)"
           ZIP_NAME="Jellyfin.Plugin.CloudBucket_${VERSION}.zip"
-          mkdir -p site
-          (cd publish && zip -q "../site/${ZIP_NAME}" \
+          mkdir -p dist
+          (cd publish && zip -q "../dist/${ZIP_NAME}" \
             Jellyfin.Plugin.CloudBucket.dll \
             Jellyfin.Plugin.CloudBucket.deps.json \
             AWSSDK.S3.dll \
             AWSSDK.Core.dll)
-          CHECKSUM="$(md5sum "site/${ZIP_NAME}" | cut -d' ' -f1)"
-          REPO="${GITHUB_REPOSITORY#*/}"
-          BASE_URL="https://${GITHUB_REPOSITORY_OWNER}.github.io/${REPO}"
-          scripts/generate-manifest.sh "${BASE_URL}" "${ZIP_NAME}" "${CHECKSUM}" "${VERSION}" > site/manifest.json
-          echo "Published ${ZIP_NAME}"
+          CHECKSUM="$(md5sum "dist/${ZIP_NAME}" | cut -d' ' -f1)"
+          BASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/latest/download"
+          scripts/generate-manifest.sh "${BASE_URL}" "${ZIP_NAME}" "${CHECKSUM}" "${VERSION}" > dist/manifest.json
           echo "Repository URL: ${BASE_URL}/manifest.json"
-          cat site/manifest.json
+          echo "Plugin zip:     ${BASE_URL}/${ZIP_NAME}"
+          cat dist/manifest.json
 
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
+      - name: Publish release (zip + manifest)
+        uses: softprops/action-gh-release@v2
         with:
-          enablement: true
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: site
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          tag_name: latest
+          name: Latest build
+          make_latest: true
+          files: |
+            dist/*.zip
+            dist/manifest.json
+          fail_on_unmatched_files: true
